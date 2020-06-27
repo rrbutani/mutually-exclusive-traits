@@ -1,15 +1,11 @@
-// #![feature(generic_associated_types)]
-// #![feature(const_generics)]
-// #![feature(const_fn)]
-// #![feature(const_if_match)]
+// See: https://play.rust-lang.org/?version=nightly&mode=debug&edition=2018&gist=b9014ecaf065b73d813ea04aa0445035
+
 #![feature(specialization)]
-// #![feature(marker_trait_attr)]
 #![allow(incomplete_features)]
 
-trait UnaryOperation { }
-// trait BinaryOperation { }
 struct Yes; struct No;
 
+trait UnaryOperation { }
 trait Literal { }
 struct Foo; impl Literal for Foo { }
 
@@ -30,34 +26,7 @@ struct Foo; impl Literal for Foo { }
 trait ValidLiteralL1 { type Valid; }
 impl<T: Literal> ValidLiteralL1 for T { default type Valid = Yes; }
 impl<T: Literal + UnaryOperation> ValidLiteralL1 for T { type Valid = No; }
-// impl<T: Literal + UnaryOperation + BinaryOperation> ValidLiteralL1 for T { type Valid = No; }
 
-
-/*///// L2 //////
-// Just Unary.
-trait ValidUnaryL2 { type Valid/*: valid::Sealed*/; }
-default impl<T: ValidUnaryL1<Valid = valid::Yes> + UnaryOperation> ValidUnaryL2 for T { type Valid = valid::Yes; }
-default impl<T: ValidUnaryL1<Valid = valid::Yes> + UnaryOperation + Literal> ValidUnaryL2 for T { type Valid = valid::No; }
-
-trait ValidUnary: ValidUnaryL2<Valid = valid::Yes> + UnaryOperation { }
-impl<T: ValidUnaryL2<Valid = valid::Yes> + UnaryOperation> ValidUnary for T { }
-
-// Just Binary.
-trait ValidBinaryL2 { type Valid/*: valid::Sealed*/; }
-default impl<T: ValidBinaryL1<Valid = valid::Yes> + BinaryOperation> ValidBinaryL2 for T { type Valid = valid::Yes; }
-default impl<T: ValidBinaryL1<Valid = valid::Yes> + BinaryOperation + UnaryOperation> ValidBinaryL2 for T { type Valid = valid::No; }
-
-trait ValidBinary: ValidBinaryL2<Valid = valid::Yes> + BinaryOperation { }
-impl<T: ValidBinaryL2<Valid = valid::Yes> + BinaryOperation> ValidBinary for T { }
-
-// Just Literal.
-trait ValidLiteralL2 { type Valid/*: valid::Sealed*/; }
-impl<T: ValidLiteralL1<Valid = valid::Yes> + Literal> ValidLiteralL2 for T { default type Valid = valid::Yes; }
-impl<T: ValidLiteralL1<Valid = valid::Yes> + Literal + BinaryOperation> ValidLiteralL2 for T { default type Valid = valid::No; }
-
-trait ValidLiteral: ValidLiteralL2<Valid = valid::Yes> + Literal { }
-impl<T: ValidLiteralL2<Valid = valid::Yes> + Literal> ValidLiteral for T { }
-*/
 fn assert_litl1<L: ValidLiteralL1<Valid = Yes>>(_l: L) { }
 
 struct Cat;
