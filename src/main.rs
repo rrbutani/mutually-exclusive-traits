@@ -14,11 +14,11 @@
 #![allow(incomplete_features)]
 
 use std::fmt::{self, Display};
-use std::ops::{Add, Mul};
+use std::ops::{Add, Sub, Mul};
 
 use num_traits::{One, Unsigned, CheckedMul};
 
-//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone)]
 pub struct UnOpData {
@@ -79,27 +79,27 @@ impl Display for Repr {
     }
 }
 
-//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
 
 pub trait Printable {
     // Args is TODO!
     fn to_repr(&self, args: ()) -> Repr;
 }
 
-pub trait UnaryOp/*: Evaluable*/ {
+pub trait UnaryOp {
     fn arg(&self) -> &dyn Printable;
     fn op(&self) -> &dyn Display;
 }
 
-pub trait BinaryOp/*: Evaluable*/ {
+pub trait BinaryOp {
     fn lhs(&self) -> &dyn Printable;
     fn rhs(&self) -> &dyn Printable;
     fn op(&self) -> &dyn Display;
 }
 
-pub trait Literal: /*Evaluable +*/ Display { }
+pub trait Literal: Display { }
 
-//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
 
 mod valid {
     pub trait Bool: private::Sealed { }
@@ -116,7 +116,7 @@ mod valid {
 
 use valid::{Bool, Yes, No};
 
-//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
 
 #[marker] auto trait ValidLiteralInner { }
 impl<Invalid: UnaryOp> !ValidLiteralInner for Invalid { }
@@ -130,7 +130,7 @@ impl<Invalid: BinaryOp> !ValidUnaryInner for Invalid { }
 impl<Invalid: Literal> !ValidBinaryInner for Invalid { }
 impl<Invalid: UnaryOp> !ValidBinaryInner for Invalid { }
 
-//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
 
 trait ValidLiteral: Literal + ValidLiteralInner { }
 impl<L: Literal + ValidLiteralInner> ValidLiteral for L { }
@@ -141,7 +141,7 @@ impl<U: UnaryOp + ValidUnaryInner> ValidUnary for U { }
 trait ValidBinary: BinaryOp + ValidBinaryInner { }
 impl<B: BinaryOp + ValidBinaryInner> ValidBinary for B { }
 
-//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
 
 trait AsLiteral { fn as_lit(&self) -> &dyn Literal; }
 default impl<T> AsLiteral for T { fn as_lit(&self) -> &dyn Literal { unreachable!() }}
@@ -173,7 +173,7 @@ impl<U: LitUnBinBound + ValidUnary + AsUnary> LitUnBound for U { }
 
 impl<L: LitUnBound + ValidLiteral + AsLiteral> LitBound for L { }
 
-//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
 
 // a use //
 
@@ -208,7 +208,12 @@ impl<T: LitBound> Printable for T {
 
 // fin //
 
-//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
+
+// TODO
+// pub struct Bits<T: Unsigned, const BITS: usize> { .. }
+
+////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BasicLit<L: Display>(L);
@@ -219,77 +224,14 @@ impl<L: Display> Display for BasicLit<L> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result { write!(fmt, "{}", self.0) }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Lit<L: /*Evaluable +*/ Display, const BITS: usize> {
-    val: L,
-}
+impl<L: Display + Clone> Evaluable for BasicLit<L> {
+    type Computed = L;
 
-impl<L: Display, const BITS: usize> Lit<L, BITS>
-where
-    L: Unsigned,
-    L: Eq + PartialOrd,
-    L: One,
-    L: Add<L, Output = L>,
-    L: Clone,
-    L: CheckedMul,
-{
-    pub fn new(val: L) -> Result<Self, ()> {
-        let two: L = L::one() + L::one();
-        let limit = num_traits::pow::checked_pow(two, BITS).ok_or(())?; // This misses values; we'll come back to it (TODO).
-
-        if val <= limit {
-            Err(())
-        } else {
-            Ok(Lit { val })
-        }
-    }
-}
-
-impl<L: Display, const BITS: usize> Lit<L, BITS> {
     #[inline]
-    const fn new_unchecked(val: L) -> Self {
-        Lit { val }
-    }
+    fn evaluate(&self) -> Self::Computed { self.0.clone() }
 }
 
-impl<L: Display, const BITS: usize> ValidLiteralInner for Lit<L, BITS> { }
-
-impl<L: Display, const BITS: usize> Display for Lit<L, BITS> {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(fmt, "[{}] {}", BITS, self.val)
-    }
-}
-
-impl<L: Display, const BITS: usize> Literal for Lit<L, BITS> { }
-
-
-// impl<L: Display, Rhs: Printable + Display, const BITS: usize> Add<Lit<Rhs, BITS>> for Lit<L, BITS>
-// where
-//     L: Add<Rhs>,
-//     <L as Add<Rhs>>::Output: Printable,
-//     <L as Add<Rhs>>::Output: Display,
-// {
-//     type Output = Lit<<L as Add<Rhs>>::Output, BITS>;
-
-//     fn add(self, rhs: Lit<Rhs, BITS>) -> Lit<<L as Add<Rhs>>::Output, BITS> {
-//         Lit::new_unchecked(self.val.add(rhs.val))
-//     }
-// }
-
-// impl<L: Display, Rhs: /*Printable +*/ Display, const BITS: usize> Add<Lit<Rhs, BITS>> for Lit<L, BITS>
-// where
-//     L: Add<Rhs>,
-//     // <L as Add<Rhs>>::Output: Printable,
-//     <L as Add<Rhs>>::Output: Display,
-// {
-//     type Output = AddOp<Lit<L, BITS>, Lit<Rhs, BITS>>;
-
-//     fn add(self, rhs: Lit<Rhs, BITS>) -> AddOp<Lit<L, BITS>, Lit<Rhs, BITS>> {
-//         AddOp::new_unchecked(self, rhs)
-//     }
-// }
-
-//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
 
 pub trait Evaluable {
     type Computed;
@@ -298,97 +240,7 @@ pub trait Evaluable {
     fn evaluate(&self) -> Self::Computed;
 }
 
-// macro_rules! primitives {
-//     ($($ty:ty)*) => {$(
-//         impl Evaluable for $ty { type Computed = $ty; fn evaluate(&self) -> Self::Computed { self.clone() } }
-//     )*};
-// }
-
-// primitives! { () ! u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize bool char }
-
-// impl<L: Evaluable + Display + Clone, const BITS: usize> Evaluable for Lit<L, BITS> {
-//     type Computed = <L as Evaluable>::Computed;
-
-//     fn evaluate(&self) -> Self::Computed {
-//         self.val.evaluate()
-//     }
-// }
-
-impl<L: Display + Clone> Evaluable for BasicLit<L> {
-    type Computed = L;
-
-    #[inline]
-    fn evaluate(&self) -> Self::Computed {
-        self.0.clone()
-    }
-}
-
-impl<L: Display + Clone, const BITS: usize> Evaluable for Lit<L, BITS> {
-    type Computed = L;
-
-    #[inline]
-    fn evaluate(&self) -> Self::Computed {
-        self.val.clone()
-    }
-}
-
-impl<Lhs: Printable, Rhs: Printable> Evaluable for AddOp<Lhs, Rhs>
-where
-    Lhs: Evaluable,
-    Rhs: Evaluable,
-    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
-{
-    type Computed = <<Lhs as Evaluable>::Computed as Add<<Rhs as Evaluable>::Computed>>::Output;
-
-    #[inline]
-    fn evaluate(&self) -> Self::Computed {
-        self.lhs.evaluate() + self.rhs.evaluate()
-    }
-}
-
-
-//////////////////////////////////////////////////////////////
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AddOp<Lhs: Printable, Rhs: Printable>
-where
-    Lhs: Evaluable,
-    Rhs: Evaluable,
-    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
-    // <Lhs as Add<Rhs>>::Output: Printable,
-{
-    lhs: Lhs,
-    rhs: Rhs,
-}
-
-impl<Lhs: Printable, Rhs: Printable> AddOp<Lhs, Rhs>
-where
-    Lhs: Evaluable,
-    Rhs: Evaluable,
-    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
-    // <Lhs as Add<Rhs>>::Output: Printable,
-{
-    #[inline]
-    const fn new_unchecked(lhs: Lhs, rhs: Rhs) -> Self { Self { lhs, rhs } }
-}
-
-impl<Lhs: Printable, Rhs: Printable> BinaryOp for AddOp<Lhs, Rhs>
-where
-    Lhs: Evaluable,
-    Rhs: Evaluable,
-    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
-{
-    fn lhs(&self) -> &dyn Printable { &self.lhs }
-    fn rhs(&self) -> &dyn Printable { &self.rhs }
-    fn op(&self) -> &dyn Display { &"+" }
-}
-
-impl<Lhs: Printable, Rhs: Printable> ValidBinaryInner for AddOp<Lhs, Rhs>
-where
-    Lhs: Evaluable,
-    Rhs: Evaluable,
-    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
-{ }
+////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Ls<T>(T);
@@ -397,26 +249,82 @@ impl<T> From<T> for Ls<T> {
     fn from(t: T) -> Self { Ls(t) }
 }
 
-impl<IL: Printable, IR: Printable, Rhs: Printable> Add<Rhs> for AddOp<IL, IR>
-where
-    IL: Evaluable,
-    IR: Evaluable,
-    <IL as Evaluable>::Computed: Add<<IR as Evaluable>::Computed>,
+////////////////////////////////////////////////////////////////////////////////////////
 
-    Rhs: Evaluable,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AddOp<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable>
+where
+    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
+{
+    lhs: Lhs,
+    rhs: Rhs,
+}
+
+impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> AddOp<Lhs, Rhs>
+where
+    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
+{
+    #[inline] const fn new_unchecked(lhs: Lhs, rhs: Rhs) -> Self { Self { lhs, rhs } }
+}
+
+impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> BinaryOp for AddOp<Lhs, Rhs>
+where
+    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
+{
+    fn lhs(&self) -> &dyn Printable { &self.lhs }
+    fn rhs(&self) -> &dyn Printable { &self.rhs }
+    fn op(&self) -> &dyn Display { &"+" }
+}
+
+impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> ValidBinaryInner for AddOp<Lhs, Rhs>
+where
+    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
+{ }
+
+impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> Evaluable for AddOp<Lhs, Rhs>
+where
+    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
+{
+    type Computed = <<Lhs as Evaluable>::Computed as Add<<Rhs as Evaluable>::Computed>>::Output;
+
+    #[inline]
+    fn evaluate(&self) -> Self::Computed { self.lhs.evaluate() + self.rhs.evaluate() }
+}
+
+// Dual of `std::ops::Add` that we own.
+pub trait AddR<Rhs> { type Output; fn add_r(self, rhs: Rhs) -> Self::Output; }
+
+impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> AddR<Rhs> for Lhs
+where
+    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
+{
+    type Output = AddOp<Lhs, Rhs>;
+    #[inline] fn add_r(self, rhs: Rhs) -> AddOp<Lhs, Rhs> { AddOp::new_unchecked(self, rhs) }
+}
+
+// The rest is just sugar that lets us use `std::ops::Add`.
+// (add expr) + _
+impl<IL: Printable + Evaluable, IR: Printable + Evaluable, Rhs: Printable + Evaluable> Add<Rhs> for AddOp<IL, IR>
+where
+    <IL as Evaluable>::Computed: Add<<IR as Evaluable>::Computed>,
     <AddOp<IL, IR> as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
 {
     type Output = AddOp<AddOp<IL, IR>, Rhs>;
-    #[inline]
-    fn add(self, rhs: Rhs) -> Self::Output {
-        AddOp::new_unchecked(self, rhs)
-    }
+    #[inline] fn add(self, rhs: Rhs) -> Self::Output { AddOp::new_unchecked(self, rhs) }
 }
 
-impl<Lhs: Printable, Rhs: Printable> Add<Rhs> for Ls<Lhs>
+// (literal) + _
+impl<LitInner: Display + Clone, Rhs: Printable + Evaluable> Add<Rhs> for BasicLit<LitInner>
 where
-    Lhs: Evaluable,
-    Rhs: Evaluable,
+    LitInner: Add<<Rhs as Evaluable>::Computed>,
+{
+    type Output = AddOp<BasicLit<LitInner>, Rhs>;
+    #[inline] fn add(self, rhs: Rhs) -> Self::Output { AddOp::new_unchecked(self, rhs) }
+}
+
+// (marked _) + _
+impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> Add<Rhs> for Ls<Lhs>
+where
     <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
 {
     type Output = AddOp<Lhs, Rhs>;
@@ -426,7 +334,7 @@ where
     }
 }
 
-//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
 
 fn assert_lit<L: ValidLiteral>() -> u8 { 89 } // exclusive
 // fn assert_litl2<L: ValidLiteralL2>() -> u8 { 89 }
@@ -440,7 +348,7 @@ fn eval<E: Evaluable>(e: E) -> E::Computed { e.evaluate() }
 // fn assert_printable<L: Printable>() -> u8 { 89 }
 // fn assert_printable<L: Printable>() -> u8 { 89 }
 
-//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
 
 struct Cheater;
 
@@ -456,14 +364,14 @@ fn arg(&self) -> &dyn Printable { todo!() }
 }
 // impl ValidLiteralInner for Cheater { }
 
-//////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////
 
 use Ls as L;
 use BasicLit as Lt;
 
 fn main() {
-    let _  = assert_lit_trait::<Lit<u8, 6>>();
-    let _  = assert_lit::<Lit<u8, 6>>();
+    // let _  = assert_lit_trait::<Lit<u8, 6>>();
+    // let _  = assert_lit::<Lit<u8, 6>>();
 
     // let _  = assert_lit::<Cheater>();
 
@@ -476,11 +384,13 @@ fn main() {
     let val = val + val;
     let val = val + val;
     let val = val + val;
+    let val = BasicLit::new(12) * val;
+    let val = BasicLit::new(120000000000) - val * val;
 
-    let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
-    let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
-    let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
-    let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
+    // let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
+    // let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
+    // let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
+    // let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
 
 
     // fn recurse<O: Evaluable, E: Evaluable, F: Evaluable>(n: usize, e: E, f: F) where E: Add<F, Output = O>, O: Add<F>, <O as std::ops::Add<F>>::Output: Evaluable, <O as std::ops::Add<F>>::Output: std::ops::Add<F>  {
