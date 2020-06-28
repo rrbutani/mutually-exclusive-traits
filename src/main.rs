@@ -328,9 +328,139 @@ where
     <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
 {
     type Output = AddOp<Lhs, Rhs>;
-    #[inline]
-    fn add(self, rhs: Rhs) -> AddOp<Lhs, Rhs> {
-        AddOp::new_unchecked(self.0, rhs)
+    #[inline] fn add(self, rhs: Rhs) -> AddOp<Lhs, Rhs> { AddOp::new_unchecked(self.0, rhs) }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////
+
+// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// pub struct MulOp<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable>
+// where
+//     <Lhs as Evaluable>::Computed: Mul<<Rhs as Evaluable>::Computed>,
+// {
+//     lhs: Lhs,
+//     rhs: Rhs,
+// }
+
+// impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> MulOp<Lhs, Rhs>
+
+macro_rules! bin_op {
+    ($nom:ident: ($lhs:ident $op:literal $rhs: ident)
+        where
+            impl $bound:ident::$bound_func:ident -> $associated_output:ident
+        {
+            dual = $dual:ident::$dual_func:ident,
+            eval: ($l_eval:ident, $r_eval:ident) => $eval:block,
+            $(
+                with lhs sugar: {
+                    $(literals: [$($literal_sugar_ty:ident: $lit_ty_bound:tt),+],)?
+                    $(unaries: [$($unary_sugar_ty:ident: $un_ty_bound:tt),+],)?
+                    $(binaries: [$($binary_sugar_ty:ident: $bin_ty_bound:tt),+],)?
+                }
+            )?
+        }
+    ) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct $nom<$lhs: Printable + Evaluable, $rhs: Printable + Evaluable>
+        where
+            <$lhs as Evaluable>::Computed: $bound<<$rhs as Evaluable>::Computed>,
+        {
+            lhs: $lhs,
+            rhs: $rhs,
+        }
+
+        impl<$lhs: Printable + Evaluable, $rhs: Printable + Evaluable> $nom<$lhs, $rhs>
+        where
+            <$lhs as Evaluable>::Computed: $bound<<$rhs as Evaluable>::Computed>,
+        {
+            #[inline] const fn new_unchecked(lhs: Lhs, rhs: Rhs) -> Self { Self { lhs, rhs } }
+        }
+
+        impl<$lhs: Printable + Evaluable, $rhs: Printable + Evaluable> BinaryOp for $nom<$lhs, $rhs>
+        where
+            <$lhs as Evaluable>::Computed: $bound<<$rhs as Evaluable>::Computed>,
+        {
+            #[inline] fn lhs(&self) -> &dyn Printable { &self.lhs }
+            #[inline] fn rhs(&self) -> &dyn Printable { &self.rhs }
+            #[inline] fn op(&self) -> &dyn Display { &$op }
+        }
+
+        impl<$lhs: Printable + Evaluable, $rhs: Printable + Evaluable> ValidBinaryInner for $nom<$lhs, $rhs>
+        where
+            <$lhs as Evaluable>::Computed: $bound<<$rhs as Evaluable>::Computed>,
+        { }
+
+        impl<$lhs: Printable + Evaluable, $rhs: Printable + Evaluable> Evaluable for $nom<$lhs, $rhs>
+        where
+            <$lhs as Evaluable>::Computed: $bound<<$rhs as Evaluable>::Computed>,
+        {
+            type Computed = <<$lhs as Evaluable>::Computed as $bound<<$rhs as Evaluable>::Computed>>::$associated_output;
+
+            #[inline] fn evaluate(&self) -> Self::Computed {
+                let $l_eval = self.lhs.evaluate();
+                let $r_eval = self.rhs.evaluate();
+                $eval
+            }
+        }
+
+        // Dual that we own.
+        pub trait $dual<Rhs> { type Output; fn $dual_func(self, rhs: Rhs) -> Self::Output; }
+
+        impl<$lhs: Printable + Evaluable, $rhs: Printable + Evaluable> $dual<$rhs> for $lhs
+        where
+            <$lhs as Evaluable>::Computed: $bound<<$rhs as Evaluable>::Computed>,
+        {
+            type Output = $nom<$lhs, $rhs>;
+
+            #[inline] fn $dual_func(self, rhs: $rhs) -> $nom<$lhs, $rhs> {
+                $nom::new_unchecked(self, rhs)
+            }
+        }
+
+        // Sugar so we can use the actual underlying op:
+        // (eventually turn this into like:
+        //     `impl_underlying_bin_op_for_bin_op_wrappers! { Mul::mul for AddOp, MulOp, ... }
+        //     `impl_underlying_bin_op_for_un_op_wrappers! { ... }
+        //     `impl_underlying_bin_op_for_lit_wrappers! { ... }
+        //     etc.
+        // )
+        //
+        // Actually this is good.
+        $(
+            // Literals as lhs
+            $($(
+                impl<Inner: Display + $lit_ty_bound, Rhs: Printable + Evaluable> $bound<Rhs> for $literal_sugar_ty<Inner>
+                where
+                    Inner: $bound<<Rhs as Evaluable>::Computed>,
+                {
+                    type $associated_output = $nom<$literal_sugar_ty<Inner>, Rhs>;
+                    #[inline] fn $bound_func(self, rhs: Rhs) -> $nom<$literal_sugar_ty<Inner>, Rhs> { $nom::new_unchecked(self, rhs) }
+                }
+            )+)?
+
+            // Unaries as lhs
+            $($(
+                $unary_sugar_ty
+                compile_error!() // unimplemented! (TODO)
+            )+)?
+
+            // Binaries as lhs
+            $($(
+                impl<LLhs: Printable + Evaluable, LRhs: Printable + Evaluable, Rhs: Printable + Evaluable> $bound<Rhs> for $binary_sugar_ty<LLhs, LRhs>
+                where
+                    <LLhs as Evaluable>::Computed: $bin_ty_bound<<LRhs as Evaluable>::Computed>,
+                    <$binary_sugar_ty<LLhs, LRhs> as Evaluable>::Computed: $bound<<Rhs as Evaluable>::Computed>,
+                {
+                    type Output = $nom<$binary_sugar_ty<LLhs, LRhs>, Rhs>;
+                    #[inline] fn $bound_func(self, rhs: Rhs) -> $nom<$binary_sugar_ty<LLhs, LRhs>, Rhs> {
+                        $nom::new_unchecked(self, rhs)
+                    }
+                }
+            )+)?
+        )?
+    };
+}
+
     }
 }
 
