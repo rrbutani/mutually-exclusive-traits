@@ -1,0 +1,15 @@
+struct Yes { } struct No { }
+
+trait Foo { }
+trait Clone { }
+
+struct SomeFoo { }  struct CloneableFoo { }
+impl Foo for SomeFoo { }
+impl Foo for CloneableFoo { }
+impl Clone for CloneableFoo { }
+
+trait FooFilter { type IsNotCloneable; }
+
+impl<T> FooFilter for T where T: Foo { default type IsNotCloneable = Yes; }
+impl<T> FooFilter for T where T: Foo, T: Clone { type IsNotCloneable = No; }
+
