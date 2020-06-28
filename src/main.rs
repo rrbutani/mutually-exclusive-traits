@@ -1,19 +1,24 @@
-// #![feature(generic_associated_types)]
+#![recursion_limit="100000"]
+
+#![feature(marker_trait_attr)]
+#![feature(optin_builtin_traits)]
+#![feature(negative_impls)]
+
+#![feature(specialization)]
+
 #![feature(const_generics)]
 #![feature(const_fn)]
-#![feature(const_if_match)]
-#![feature(specialization)]
-// #![feature(negative_impls)]
-// #![feature(optin_builtin_traits)]
-
-// #![feature(overlapping_marker_traits)]
-#![feature(marker_trait_attr)]
+#![feature(never_type)]
+#![feature(type_name_of_val)]
+#![feature(try_blocks)]
 #![allow(incomplete_features)]
 
-use std::fmt::{Arguments, Display};
-use std::ops::Add;
+use std::fmt::{self, Display};
+use std::ops::{Add, Mul};
 
-use num_traits::{One, Pow, Unsigned, CheckedMul};
+use num_traits::{One, Unsigned, CheckedMul};
+
+//////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone)]
 pub struct UnOpData {
@@ -58,206 +63,98 @@ kinds! {
 
 #[derive(Debug, Clone)]
 pub enum Repr {
+    Lit(LitData),
     UnOp(UnOpData),
     BinOp(BinOpData),
-    Lit(LitData),
 }
 
-trait Printable {
+impl Display for Repr {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Repr::*;
+        match self {
+            Lit(LitData(lit)) => write!(fmt, "{}", lit),
+            UnOp(UnOpData { op, arg }) => write!(fmt, "{}({})", op, arg),
+            BinOp(BinOpData { op, lhs, rhs }) => write!(fmt, "({}) {} ({})", lhs, op, rhs),
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////
+
+pub trait Printable {
     // Args is TODO!
     fn to_repr(&self, args: ()) -> Repr;
 }
 
-// trait UnaryOperation {
-//     fn arg(&self) -> &impl Printable;
-//     fn op(&self) -> &impl Display;
-// }
-
-// trait BinaryOperation {
-//     fn lhs(&self) -> &impl Printable;
-//     fn rhs(&self) -> &impl Printable;
-//     fn op(&self) -> &impl Display;
-// }
-
-trait UnaryOperation {
+pub trait UnaryOp/*: Evaluable*/ {
     fn arg(&self) -> &dyn Printable;
     fn op(&self) -> &dyn Display;
 }
 
-trait BinaryOperation {
+pub trait BinaryOp/*: Evaluable*/ {
     fn lhs(&self) -> &dyn Printable;
     fn rhs(&self) -> &dyn Printable;
     fn op(&self) -> &dyn Display;
 }
 
-trait Literal: Display { }
+pub trait Literal: /*Evaluable +*/ Display { }
 
-// If const generics were there:
-/*
-trait ValidOpTraitImpl { type Valid: const bool; }
-
-default impl<T: Literal> ValidOpTraitImpl for T { type Valid = true; }
-default impl<T: UnaryOperation> ValidOpTraitImpl for T { type Valid = true; }
-default impl<T: BinaryOperation> ValidOpTraitImpl for T { type Valid = true; }
-
-default impl<T: Literal + UnaryOperation> ValidOpTraitImpl for T { type Valid = false; }
-default impl<T: UnaryOperation + BinaryOperation> ValidOpTraitImpl for T { type Valid = false; }
-default impl<T: BinaryOperation + Literal> ValidOpTraitImpl for T { type Valid = false; }
-
-impl<T: Literal + UnaryOperation + BinaryOperation> ValidOpTraitImpl for T { type Valid = false; }
-*/
+//////////////////////////////////////////////////////////////
 
 mod valid {
-    pub trait Sealed { }
+    pub trait Bool: private::Sealed { }
+    mod private { pub trait Sealed { } }
+
+    impl<S: private::Sealed> Bool for S { }
 
     pub struct Yes;
     pub struct No;
 
-    impl Sealed for Yes { }
-    impl Sealed for No { }
+    impl private::Sealed for Yes { }
+    impl private::Sealed for No { }
 }
 
-/*
-trait ValidOpTraitImpl { type Valid: valid::Sealed; }
+use valid::{Bool, Yes, No};
 
-default impl<T: Literal> ValidOpTraitImpl for T { type Valid = valid::Yes; }
-default impl<T: UnaryOperation> ValidOpTraitImpl for T { type Valid = valid::Yes; }
-default impl<T: BinaryOperation> ValidOpTraitImpl for T { type Valid = valid::Yes; }
+//////////////////////////////////////////////////////////////
 
-default impl<T: Literal + UnaryOperation> ValidOpTraitImpl for T { type Valid = valid::No; }
-default impl<T: UnaryOperation + BinaryOperation> ValidOpTraitImpl for T { type Valid = valid::No; }
-default impl<T: BinaryOperation + Literal> ValidOpTraitImpl for T { type Valid = valid::No; }
+#[marker] auto trait ValidLiteralInner { }
+impl<Invalid: UnaryOp> !ValidLiteralInner for Invalid { }
+impl<Invalid: BinaryOp> !ValidLiteralInner for Invalid { }
 
-impl<T: Literal + UnaryOperation + BinaryOperation> ValidOpTraitImpl for T { type Valid = valid::No; }
-*/
+#[marker] auto trait ValidUnaryInner { }
+impl<Invalid: Literal> !ValidUnaryInner for Invalid { }
+impl<Invalid: BinaryOp> !ValidUnaryInner for Invalid { }
 
-// impl<T: ValidOpTraitImpl<Valid = valid::Yes> + Literal> Printable for T {
-//     fn to_repr(&self, args: ()) -> Repr {
-//         LitM::into_repr(LitData(format!("{}", self)))
-//     }
-// }
+#[marker] auto trait ValidBinaryInner { }
+impl<Invalid: Literal> !ValidBinaryInner for Invalid { }
+impl<Invalid: UnaryOp> !ValidBinaryInner for Invalid { }
 
-// impl<T: ValidOpTraitImpl<Valid = valid::Yes> + UnaryOperation> Printable for T {
-//     fn to_repr(&self, args: ()) -> Repr {
-//         UnOpM::into_repr(UnOpData {
-//             op: format!("{}", self.op()),
-//             arg: Box::new(self.arg().to_repr()),
-//         })
-//     }
-// }
+//////////////////////////////////////////////////////////////
 
-// impl<T: ValidOpTraitImpl<Valid = valid::Yes> + BinaryOperation> Printable for T {
-//     fn to_repr(&self, args: ()) -> Repr {
-//         BinOpM::into_repr(BinOpData {
-//             op: format!("{}", self.op()),
-//             lhs: Box::new(self.lhs().to_repr()),
-//             rgs: Box::new(self.rhs().to_repr()),
-//         })
-//     }
-// }
+trait ValidLiteral: Literal + ValidLiteralInner { }
+impl<L: Literal + ValidLiteralInner> ValidLiteral for L { }
 
-/*
-trait ValidUnary: UnaryOperation { type Valid: valid::Sealed; }
-default impl<T: UnaryOperation> ValidUnary for T { type Valid = valid::Yes; }
+trait ValidUnary: UnaryOp + ValidUnaryInner { }
+impl<U: UnaryOp + ValidUnaryInner> ValidUnary for U { }
 
-default impl<T: UnaryOperation + BinaryOperation> ValidUnary for T { type Valid = valid::No; }
-default impl<T: UnaryOperation + Literal> ValidUnary for T { type Valid = valid::No; }
+trait ValidBinary: BinaryOp + ValidBinaryInner { }
+impl<B: BinaryOp + ValidBinaryInner> ValidBinary for B { }
 
-default impl<T: UnaryOperation + BinaryOperation + Literal> ValidUnary for T { type Valid = valid::No; }
-*/
+//////////////////////////////////////////////////////////////
 
-/*
-trait ValidUnary { }
-
-default impl<T: UnaryOperation> ValidUnary for T { }
-default impl<T: BinaryOperation> !ValidUnary for T { }
-*/
-
-/**** L1 ****/
-// Unary or (Lit + Unary)
-trait ValidUnaryL1 { type Valid/*: valid::Sealed*/; }
-default impl<T: UnaryOperation> ValidUnaryL1 for T { type Valid = valid::Yes; }
-default impl<T: UnaryOperation + BinaryOperation> ValidUnaryL1 for T { type Valid = valid::No; }
-default impl<T: UnaryOperation + BinaryOperation + Literal> ValidUnaryL1 for T { type Valid = valid::No; }
-
-// Binary or (Un + Binary)
-trait ValidBinaryL1 { type Valid/*: valid::Sealed*/; }
-default impl<T: BinaryOperation> ValidBinaryL1 for T { type Valid = valid::Yes; }
-default impl<T: BinaryOperation + Literal> ValidBinaryL1 for T { type Valid = valid::No; }
-default impl<T: BinaryOperation + Literal + UnaryOperation> ValidBinaryL1 for T { type Valid = valid::No; }
-
-// Literal or (Bin + Literal)
-trait ValidLiteralL1 { type Valid/*: valid::Sealed*/; }
-impl<T: Literal> ValidLiteralL1 for T { default type Valid = valid::Yes; }
-impl<T: Literal + UnaryOperation> ValidLiteralL1 for T { default type Valid = valid::No; }
-impl<T: Literal + UnaryOperation + BinaryOperation> ValidLiteralL1 for T { type Valid = valid::No; }
-
-
-/**** L2 ****/
-// Just Unary.
-trait ValidUnaryL2 { type Valid/*: valid::Sealed*/; }
-default impl<T: ValidUnaryL1<Valid = valid::Yes> + UnaryOperation> ValidUnaryL2 for T { type Valid = valid::Yes; }
-default impl<T: ValidUnaryL1<Valid = valid::Yes> + UnaryOperation + Literal> ValidUnaryL2 for T { type Valid = valid::No; }
-
-trait ValidUnary: ValidUnaryL2<Valid = valid::Yes> + UnaryOperation { }
-impl<T: ValidUnaryL2<Valid = valid::Yes> + UnaryOperation> ValidUnary for T { }
-
-// Just Binary.
-trait ValidBinaryL2 { type Valid/*: valid::Sealed*/; }
-default impl<T: ValidBinaryL1<Valid = valid::Yes> + BinaryOperation> ValidBinaryL2 for T { type Valid = valid::Yes; }
-default impl<T: ValidBinaryL1<Valid = valid::Yes> + BinaryOperation + UnaryOperation> ValidBinaryL2 for T { type Valid = valid::No; }
-
-trait ValidBinary: ValidBinaryL2<Valid = valid::Yes> + BinaryOperation { }
-impl<T: ValidBinaryL2<Valid = valid::Yes> + BinaryOperation> ValidBinary for T { }
-
-// Just Literal.
-trait ValidLiteralL2 { type Valid/*: valid::Sealed*/; }
-impl<T: ValidLiteralL1<Valid = valid::Yes> + Literal> ValidLiteralL2 for T { default type Valid = valid::Yes; }
-impl<T: ValidLiteralL1<Valid = valid::Yes> + Literal + BinaryOperation> ValidLiteralL2 for T { default type Valid = valid::No; }
-
-trait ValidLiteral: ValidLiteralL2<Valid = valid::Yes> + Literal { }
-impl<T: ValidLiteralL2<Valid = valid::Yes> + Literal> ValidLiteral for T { }
-
-/**** Fin ****/
-
-// trait One { }
-// trait Two { }
-// trait Three { }
-
-// struct A;
-// struct B;
-// struct C;
-
-// impl One for A { }
-// impl Two for A { } impl Two for B { }
-// impl Three for A { } impl Three for B { } impl Three for C { }
-
-// trait Assoc { type Other; }
-
-/*// Literal | Unary | Binary
-trait LitUnBinBound { fn as_bin(&self) -> &dyn BinaryOperation; }
-// Literal | Unary
-trait LitUnBound: LitUnBinBound { fn as_un(&self) -> &dyn UnaryOperation; }
-// Literal
-trait LitBound: LitUnBound { fn as_lit(&self) -> &dyn Literal; }
-*/
-
-// auto trait One { }
-
-// impl<L: ValidLiteral> !One for L { }
-// impl<L: ValidUnary> !One for L { }
-
-trait AsLiteral { fn as_lit(&self) -> &dyn Literal { unreachable!() } }
-default impl<T> AsLiteral for T { }
+trait AsLiteral { fn as_lit(&self) -> &dyn Literal; }
+default impl<T> AsLiteral for T { fn as_lit(&self) -> &dyn Literal { unreachable!() }}
 impl<T: ValidLiteral> AsLiteral for T { fn as_lit(&self) -> &dyn Literal { self }}
 
-trait AsUnary { fn as_un(&self) -> &dyn UnaryOperation { unreachable!() } }
-default impl<T> AsUnary for T { }
-impl<T: ValidUnary> AsUnary for T { fn as_un(&self) -> &dyn UnaryOperation { self }}
+trait AsUnary { fn as_un(&self) -> &dyn UnaryOp; }
+impl<T> AsUnary for T { default fn as_un(&self) -> &dyn UnaryOp { unreachable!() }}
+impl<T: ValidUnary> AsUnary for T { fn as_un(&self) -> &dyn UnaryOp { self }}
 
-trait AsBinary { fn as_bin(&self) -> &dyn BinaryOperation { unreachable!() } }
-default impl<T> AsBinary for T { }
-impl<T: ValidBinary> AsBinary for T { fn as_bin(&self) -> &dyn BinaryOperation { self }}
+trait AsBinary { fn as_bin(&self) -> &dyn BinaryOp; }
+impl<T> AsBinary for T { default fn as_bin(&self) -> &dyn BinaryOp { unreachable!() }}
+impl<T: ValidBinary> AsBinary for T { fn as_bin(&self) -> &dyn BinaryOp { self }}
+
 
 // Literal | Unary | Binary
 #[marker] trait LitUnBinBound: AsBinary { }
@@ -265,6 +162,7 @@ impl<T: ValidBinary> AsBinary for T { fn as_bin(&self) -> &dyn BinaryOperation {
 #[marker] trait LitUnBound: AsUnary + LitUnBinBound { }
 // Literal
 #[marker] trait LitBound: AsLiteral + LitUnBound { }
+
 
 impl<L: ValidLiteral + AsBinary> LitUnBinBound for L { }
 impl<U: ValidUnary + AsBinary> LitUnBinBound for U { }
@@ -274,6 +172,8 @@ impl<L: LitUnBinBound + ValidLiteral + AsUnary> LitUnBound for L { }
 impl<U: LitUnBinBound + ValidUnary + AsUnary> LitUnBound for U { }
 
 impl<L: LitUnBound + ValidLiteral + AsLiteral> LitBound for L { }
+
+//////////////////////////////////////////////////////////////
 
 // a use //
 
@@ -308,19 +208,25 @@ impl<T: LitBound> Printable for T {
 
 // fin //
 
-trait Evaluatable<Res>: Printable {
-    fn eval(&self) -> Res;
+//////////////////////////////////////////////////////////////
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct BasicLit<L: Display>(L);
+impl<L: Display> BasicLit<L> { #[inline] pub const fn new(val: L) -> Self { Self(val) } }
+impl<L: Display> Literal for BasicLit<L> { }
+impl<L: Display> ValidLiteralInner for BasicLit<L> { }
+impl<L: Display> Display for BasicLit<L> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result { write!(fmt, "{}", self.0) }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Lit<L: Display, const BITS: usize> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Lit<L: /*Evaluable +*/ Display, const BITS: usize> {
     val: L,
 }
 
 impl<L: Display, const BITS: usize> Lit<L, BITS>
 where
     L: Unsigned,
-    // L: Pow<usize, Output = L>,
     L: Eq + PartialOrd,
     L: One,
     L: Add<L, Output = L>,
@@ -339,6 +245,15 @@ where
     }
 }
 
+impl<L: Display, const BITS: usize> Lit<L, BITS> {
+    #[inline]
+    const fn new_unchecked(val: L) -> Self {
+        Lit { val }
+    }
+}
+
+impl<L: Display, const BITS: usize> ValidLiteralInner for Lit<L, BITS> { }
+
 impl<L: Display, const BITS: usize> Display for Lit<L, BITS> {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(fmt, "[{}] {}", BITS, self.val)
@@ -347,53 +262,244 @@ impl<L: Display, const BITS: usize> Display for Lit<L, BITS> {
 
 impl<L: Display, const BITS: usize> Literal for Lit<L, BITS> { }
 
-fn assert_lit<L: LitBound>() -> u8 { 89 } // exclusive
+
+// impl<L: Display, Rhs: Printable + Display, const BITS: usize> Add<Lit<Rhs, BITS>> for Lit<L, BITS>
+// where
+//     L: Add<Rhs>,
+//     <L as Add<Rhs>>::Output: Printable,
+//     <L as Add<Rhs>>::Output: Display,
+// {
+//     type Output = Lit<<L as Add<Rhs>>::Output, BITS>;
+
+//     fn add(self, rhs: Lit<Rhs, BITS>) -> Lit<<L as Add<Rhs>>::Output, BITS> {
+//         Lit::new_unchecked(self.val.add(rhs.val))
+//     }
+// }
+
+// impl<L: Display, Rhs: /*Printable +*/ Display, const BITS: usize> Add<Lit<Rhs, BITS>> for Lit<L, BITS>
+// where
+//     L: Add<Rhs>,
+//     // <L as Add<Rhs>>::Output: Printable,
+//     <L as Add<Rhs>>::Output: Display,
+// {
+//     type Output = AddOp<Lit<L, BITS>, Lit<Rhs, BITS>>;
+
+//     fn add(self, rhs: Lit<Rhs, BITS>) -> AddOp<Lit<L, BITS>, Lit<Rhs, BITS>> {
+//         AddOp::new_unchecked(self, rhs)
+//     }
+// }
+
+//////////////////////////////////////////////////////////////
+
+pub trait Evaluable {
+    type Computed;
+
+    // #[inline]
+    fn evaluate(&self) -> Self::Computed;
+}
+
+// macro_rules! primitives {
+//     ($($ty:ty)*) => {$(
+//         impl Evaluable for $ty { type Computed = $ty; fn evaluate(&self) -> Self::Computed { self.clone() } }
+//     )*};
+// }
+
+// primitives! { () ! u8 u16 u32 u64 u128 usize i8 i16 i32 i64 i128 isize bool char }
+
+// impl<L: Evaluable + Display + Clone, const BITS: usize> Evaluable for Lit<L, BITS> {
+//     type Computed = <L as Evaluable>::Computed;
+
+//     fn evaluate(&self) -> Self::Computed {
+//         self.val.evaluate()
+//     }
+// }
+
+impl<L: Display + Clone> Evaluable for BasicLit<L> {
+    type Computed = L;
+
+    #[inline]
+    fn evaluate(&self) -> Self::Computed {
+        self.0.clone()
+    }
+}
+
+impl<L: Display + Clone, const BITS: usize> Evaluable for Lit<L, BITS> {
+    type Computed = L;
+
+    #[inline]
+    fn evaluate(&self) -> Self::Computed {
+        self.val.clone()
+    }
+}
+
+impl<Lhs: Printable, Rhs: Printable> Evaluable for AddOp<Lhs, Rhs>
+where
+    Lhs: Evaluable,
+    Rhs: Evaluable,
+    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
+{
+    type Computed = <<Lhs as Evaluable>::Computed as Add<<Rhs as Evaluable>::Computed>>::Output;
+
+    #[inline]
+    fn evaluate(&self) -> Self::Computed {
+        self.lhs.evaluate() + self.rhs.evaluate()
+    }
+}
+
+
+//////////////////////////////////////////////////////////////
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AddOp<Lhs: Printable, Rhs: Printable>
+where
+    Lhs: Evaluable,
+    Rhs: Evaluable,
+    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
+    // <Lhs as Add<Rhs>>::Output: Printable,
+{
+    lhs: Lhs,
+    rhs: Rhs,
+}
+
+impl<Lhs: Printable, Rhs: Printable> AddOp<Lhs, Rhs>
+where
+    Lhs: Evaluable,
+    Rhs: Evaluable,
+    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
+    // <Lhs as Add<Rhs>>::Output: Printable,
+{
+    #[inline]
+    const fn new_unchecked(lhs: Lhs, rhs: Rhs) -> Self { Self { lhs, rhs } }
+}
+
+impl<Lhs: Printable, Rhs: Printable> BinaryOp for AddOp<Lhs, Rhs>
+where
+    Lhs: Evaluable,
+    Rhs: Evaluable,
+    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
+{
+    fn lhs(&self) -> &dyn Printable { &self.lhs }
+    fn rhs(&self) -> &dyn Printable { &self.rhs }
+    fn op(&self) -> &dyn Display { &"+" }
+}
+
+impl<Lhs: Printable, Rhs: Printable> ValidBinaryInner for AddOp<Lhs, Rhs>
+where
+    Lhs: Evaluable,
+    Rhs: Evaluable,
+    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
+{ }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct Ls<T>(T);
+
+impl<T> From<T> for Ls<T> {
+    fn from(t: T) -> Self { Ls(t) }
+}
+
+impl<IL: Printable, IR: Printable, Rhs: Printable> Add<Rhs> for AddOp<IL, IR>
+where
+    IL: Evaluable,
+    IR: Evaluable,
+    <IL as Evaluable>::Computed: Add<<IR as Evaluable>::Computed>,
+
+    Rhs: Evaluable,
+    <AddOp<IL, IR> as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
+{
+    type Output = AddOp<AddOp<IL, IR>, Rhs>;
+    #[inline]
+    fn add(self, rhs: Rhs) -> Self::Output {
+        AddOp::new_unchecked(self, rhs)
+    }
+}
+
+impl<Lhs: Printable, Rhs: Printable> Add<Rhs> for Ls<Lhs>
+where
+    Lhs: Evaluable,
+    Rhs: Evaluable,
+    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
+{
+    type Output = AddOp<Lhs, Rhs>;
+    #[inline]
+    fn add(self, rhs: Rhs) -> AddOp<Lhs, Rhs> {
+        AddOp::new_unchecked(self.0, rhs)
+    }
+}
+
+//////////////////////////////////////////////////////////////
+
+fn assert_lit<L: ValidLiteral>() -> u8 { 89 } // exclusive
 // fn assert_litl2<L: ValidLiteralL2>() -> u8 { 89 }
-fn assert_litl1<L: ValidLiteralL1<Valid = valid::Yes>>() -> u8 { 89 }
+// fn assert_litl1<L: ValidLiteralL1<Valid = valid::Yes>>() -> u8 { 89 }
 // fn assert_litl1<L: ValidLiteralL1>() -> u8 where L: ValidLiteralL1<Valid = valid::Yes> { 89 }
 // fn assert_litl1<L: ValidLiteralL1>() -> u8 { 89 }
 fn assert_lit_trait<L: Literal>() -> u8 { 89 }
 
-// const check: u8 = assert_lit::<Lit<u8, 8>>();
-// const check: u8 = assert_litl2::<Lit<u8, 8>>();
-// const check: u8 = assert_litl1::<Lit<u8, 8>>();
-// const check: u8 = assert_lit_trait::<Lit<u8, 8>>();
+fn eval<E: Evaluable>(e: E) -> E::Computed { e.evaluate() }
 
-// impl<L, const BITS: usize> Repr for
+// fn assert_printable<L: Printable>() -> u8 { 89 }
+// fn assert_printable<L: Printable>() -> u8 { 89 }
 
-/*
+//////////////////////////////////////////////////////////////
 
-pub struct ConstList<E, const LEN: usize> {
-    elem: [E; LEN],
-}
+struct Cheater;
 
-trait List<E> {
-    type To<T, const LEN: usize>: List<T>;
-
-    fn map<T>(self, func: impl Fn(E) -> T) -> Self::To::<T>;
-}
-
-impl<E> List<E> for Vec<E> {
-    type To<T, const LEN: usize> = Vec<T>;
-
-    fn map<T>(mut self, func: impl Fn(E) -> T) -> Self::To::<T> {
-        self.drain(..).map(func).collect()
+impl Display for Cheater {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
     }
 }
 
-fn main() {
-    let v = vec![0, 1, 2, 3, 4].map(|n| n.to_string());
+impl Literal for Cheater { }
+impl UnaryOp for Cheater { fn op(&self) -> &dyn std::fmt::Display { todo!() }
+fn arg(&self) -> &dyn Printable { todo!() }
 }
-*/
+// impl ValidLiteralInner for Cheater { }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // let val = Lit::new(78u8).unwrap();
+//////////////////////////////////////////////////////////////
 
-    // println!("{:?}", val.to_repr());
+use Ls as L;
+use BasicLit as Lt;
 
-    // let _ = assert_lit_trait::<Lit<u8, 8>>();
-    // let _ = assert_litl1::<Lit<u8, 8>>();
-    let _ = assert_litl1::<Lit<u8, 8>>();
+fn main() {
+    let _  = assert_lit_trait::<Lit<u8, 6>>();
+    let _  = assert_lit::<Lit<u8, 6>>();
 
-    Ok(())
+    // let _  = assert_lit::<Cheater>();
+
+    // let val = Lit::<u128, 6>::new(78u128).unwrap();
+    let val = BasicLit::new(78u128);
+    // let _ = eval(val);
+    // let _ = assert_lit_trait::<BasicLit<u128>>();
+
+    let val = L(val) + val;
+    let val = val + val;
+    let val = val + val;
+    let val = val + val;
+
+    let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
+    let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
+    let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
+    let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
+
+
+    // fn recurse<O: Evaluable, E: Evaluable, F: Evaluable>(n: usize, e: E, f: F) where E: Add<F, Output = O>, O: Add<F>, <O as std::ops::Add<F>>::Output: Evaluable, <O as std::ops::Add<F>>::Output: std::ops::Add<F>  {
+    //     if n == 0 {
+    //         return;
+    //     } else {
+    //         recurse(n - 1, e + f, f)
+    //     }
+    // }
+
+    // let val = val + val;
+    // let val = val + val;
+    // let val = val + val;
+    // let val = val + val;
+    // let val = val + val;
+
+    // let _ = assert_printable::<Lit<u8, 8>>();
+    // println!("{:#?}", val.to_repr(()));
+    println!("{:#}", val.to_repr(()));
+    println!("{:#?}", val.evaluate());
+    // println!("{}", core::any::type_name_of_val(&val));
 }
