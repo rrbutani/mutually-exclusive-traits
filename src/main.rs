@@ -11,10 +11,12 @@
 #![feature(never_type)]
 #![feature(type_name_of_val)]
 #![feature(try_blocks)]
+
 #![allow(incomplete_features)]
 
 use std::fmt::{self, Display};
-use std::ops::{Add, Sub, Mul};
+use std::ops::{Add, Sub, Mul, Div, Rem, BitAnd, BitOr, BitXor};
+use std::clone::Clone;
 
 use num_traits::{One, Unsigned, CheckedMul};
 
@@ -246,103 +248,113 @@ pub trait Evaluable {
 pub struct Ls<T>(T);
 
 impl<T> From<T> for Ls<T> {
-    fn from(t: T) -> Self { Ls(t) }
+    #[inline(always)] fn from(t: T) -> Self { Ls(t) }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AddOp<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable>
-where
-    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
-{
-    lhs: Lhs,
-    rhs: Rhs,
-}
+macro_rules! bin_ops {
+    (mod $modname:ident {
+        $(
+            $nom:ident :: $token:tt represents $tr:ident::$tr_func:ident,
+        )+
+    }
+        $(with literals: [$($literal_sugar_ty:ident: (in $path:tt) $lit_ty_bound:tt),+])?
+    ) => {
+        mod $modname {
+            use super::{Printable, Evaluable, Display, ValidBinaryInner, Ls, BinaryOp};
 
-impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> AddOp<Lhs, Rhs>
-where
-    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
-{
-    #[inline] const fn new_unchecked(lhs: Lhs, rhs: Rhs) -> Self { Self { lhs, rhs } }
-}
+            $($(
+                use super::$literal_sugar_ty;
+            )+)?
 
-impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> BinaryOp for AddOp<Lhs, Rhs>
-where
-    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
-{
-    fn lhs(&self) -> &dyn Printable { &self.lhs }
-    fn rhs(&self) -> &dyn Printable { &self.rhs }
-    fn op(&self) -> &dyn Display { &"+" }
-}
+            // $(
+            //     bin_op! {
+            //         $nom: (Lhs $token Rhs) where impl (in super) $tr::$tr_func -> Output
+            //         {
+            //             dual = $tr::$tr_func,
+            //             eval: (l, r) => { l $token r },
+            //             with lhs sugar: {
+            //                 // binaries: [$(
+            //                 //     $nom: (in super) $tr
+            //                 // ),+]
+            //                 // $(literals: [$(
+            //                 //     $literal_sugar_ty: (in $path) $lit_ty_bound
+            //                 // ),+])?
+            //             }
+            //         }
+            //     }
+            // )+
 
-impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> ValidBinaryInner for AddOp<Lhs, Rhs>
-where
-    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
-{ }
+            bin_ops! {
+                __munch
+                list: [$($nom :: $token represents $tr::$tr_func,)+]
+                lits: [$(with literals: [$($literal_sugar_ty: (in $path) $lit_ty_bound),+])?]
+                munch: [$($nom :: $token represents $tr::$tr_func,)+]
+            }
+        }
+    };
 
-impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> Evaluable for AddOp<Lhs, Rhs>
-where
-    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
-{
-    type Computed = <<Lhs as Evaluable>::Computed as Add<<Rhs as Evaluable>::Computed>>::Output;
+    (__munch
+        list: [$(
+            $nom:ident :: $token:tt represents $tr:ident::$tr_func:ident,
+        )+]
+        lits: [
+            $(with literals: [$($literal_sugar_ty:ident: (in $path:tt) $lit_ty_bound:tt),+])?
+        ]
+        munch: [
+            $cur_nom:ident :: $cur_token:tt represents $cur_tr:ident::$cur_tr_func:ident,
+            $($rest:tt)*
+        ]
+    ) => {
+        bin_op! {
+            $cur_nom: (Lhs $cur_token Rhs) where impl (in super) $cur_tr::$cur_tr_func -> Output {
+                dual = $cur_tr::$cur_tr_func,
+                eval: (l, r) => { l $cur_token r },
+                with lhs sugar: {
+                    $(literals: [$(
+                        $literal_sugar_ty: (in $path) $lit_ty_bound
+                    ),+],)?
+                    binaries: [$(
+                        $nom: (in super) $tr
+                    ),+],
+                }
+            }
+        }
 
-    #[inline]
-    fn evaluate(&self) -> Self::Computed { self.lhs.evaluate() + self.rhs.evaluate() }
-}
+        bin_ops! {
+            __munch
+            list: [$($nom :: $token represents $tr::$tr_func,)+]
+            lits: [$(with literals: [$($literal_sugar_ty: (in $path) $lit_ty_bound),+])?]
+            munch: [$($rest)*]
+        }
+    };
 
-// Dual of `std::ops::Add` that we own.
-pub trait AddR<Rhs> { type Output; fn add_r(self, rhs: Rhs) -> Self::Output; }
-
-impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> AddR<Rhs> for Lhs
-where
-    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
-{
-    type Output = AddOp<Lhs, Rhs>;
-    #[inline] fn add_r(self, rhs: Rhs) -> AddOp<Lhs, Rhs> { AddOp::new_unchecked(self, rhs) }
-}
-
-// The rest is just sugar that lets us use `std::ops::Add`.
-// (add expr) + _
-impl<IL: Printable + Evaluable, IR: Printable + Evaluable, Rhs: Printable + Evaluable> Add<Rhs> for AddOp<IL, IR>
-where
-    <IL as Evaluable>::Computed: Add<<IR as Evaluable>::Computed>,
-    <AddOp<IL, IR> as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
-{
-    type Output = AddOp<AddOp<IL, IR>, Rhs>;
-    #[inline] fn add(self, rhs: Rhs) -> Self::Output { AddOp::new_unchecked(self, rhs) }
-}
-
-// (literal) + _
-impl<LitInner: Display + Clone, Rhs: Printable + Evaluable> Add<Rhs> for BasicLit<LitInner>
-where
-    LitInner: Add<<Rhs as Evaluable>::Computed>,
-{
-    type Output = AddOp<BasicLit<LitInner>, Rhs>;
-    #[inline] fn add(self, rhs: Rhs) -> Self::Output { AddOp::new_unchecked(self, rhs) }
-}
-
-// (marked _) + _
-impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> Add<Rhs> for Ls<Lhs>
-where
-    <Lhs as Evaluable>::Computed: Add<<Rhs as Evaluable>::Computed>,
-{
-    type Output = AddOp<Lhs, Rhs>;
-    #[inline] fn add(self, rhs: Rhs) -> AddOp<Lhs, Rhs> { AddOp::new_unchecked(self.0, rhs) }
+    // End
+    (__munch
+        list: [$(
+            $nom:ident :: $token:tt represents $tr:ident::$tr_func:ident,
+        )+]
+        lits: [
+            $(with literals: [$($literal_sugar_ty:ident: (in $path:tt) $lit_ty_bound:tt),+])?
+        ]
+        munch: [
+        ]
+    ) => { };
 }
 
 macro_rules! bin_op {
-    ($nom:ident: ($lhs:ident $op:literal $rhs: ident)
+    ($nom:ident: ($lhs:ident $op:tt $rhs:ident)
         where
-            impl $bound:ident::$bound_func:ident -> $associated_output:ident
+            impl (in $path:tt) $bound:ident::$bound_func:ident -> $associated_output:ident
         {
             dual = $dual:ident::$dual_func:ident,
             eval: ($l_eval:ident, $r_eval:ident) => $eval:block,
             $(
                 with lhs sugar: {
-                    $(literals: [$($literal_sugar_ty:ident: $lit_ty_bound:tt),+],)?
-                    $(unaries: [$($unary_sugar_ty:ident: $un_ty_bound:tt),+],)?
-                    $(binaries: [$($binary_sugar_ty:ident: $bin_ty_bound:tt),+],)?
+                    $(literals: [$($literal_sugar_ty:ident: (in $literal_path:tt) $lit_ty_bound:tt),+],)?
+                    $(unaries: [$( $unary_sugar_ty:ident: (in $unary_path:tt) $un_ty_bound:tt),+],)?
+                    $(binaries: [$( $binary_sugar_ty:ident:  (in $binary_path:tt) $bin_ty_bound:tt),+],)?
                 }
             )?
         }
@@ -350,7 +362,7 @@ macro_rules! bin_op {
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub struct $nom<$lhs: Printable + Evaluable, $rhs: Printable + Evaluable>
         where
-            <$lhs as Evaluable>::Computed: $bound<<$rhs as Evaluable>::Computed>,
+            <$lhs as Evaluable>::Computed: $path::$bound<<$rhs as Evaluable>::Computed>,
         {
             lhs: $lhs,
             rhs: $rhs,
@@ -358,32 +370,32 @@ macro_rules! bin_op {
 
         impl<$lhs: Printable + Evaluable, $rhs: Printable + Evaluable> $nom<$lhs, $rhs>
         where
-            <$lhs as Evaluable>::Computed: $bound<<$rhs as Evaluable>::Computed>,
+            <$lhs as Evaluable>::Computed: $path::$bound<<$rhs as Evaluable>::Computed>,
         {
-            #[inline] const fn new_unchecked(lhs: Lhs, rhs: Rhs) -> Self { Self { lhs, rhs } }
+            #[inline(always)] const fn new_unchecked(lhs: Lhs, rhs: Rhs) -> Self { Self { lhs, rhs } }
         }
 
         impl<$lhs: Printable + Evaluable, $rhs: Printable + Evaluable> BinaryOp for $nom<$lhs, $rhs>
         where
-            <$lhs as Evaluable>::Computed: $bound<<$rhs as Evaluable>::Computed>,
+            <$lhs as Evaluable>::Computed: $path::$bound<<$rhs as Evaluable>::Computed>,
         {
-            #[inline] fn lhs(&self) -> &dyn Printable { &self.lhs }
-            #[inline] fn rhs(&self) -> &dyn Printable { &self.rhs }
-            #[inline] fn op(&self) -> &dyn Display { &$op }
+            #[inline(always)] fn lhs(&self) -> &dyn Printable { &self.lhs }
+            #[inline(always)] fn rhs(&self) -> &dyn Printable { &self.rhs }
+            #[inline(always)] fn op(&self) -> &dyn Display { &core::stringify!($op) }
         }
 
         impl<$lhs: Printable + Evaluable, $rhs: Printable + Evaluable> ValidBinaryInner for $nom<$lhs, $rhs>
         where
-            <$lhs as Evaluable>::Computed: $bound<<$rhs as Evaluable>::Computed>,
+            <$lhs as Evaluable>::Computed: $path::$bound<<$rhs as Evaluable>::Computed>,
         { }
 
         impl<$lhs: Printable + Evaluable, $rhs: Printable + Evaluable> Evaluable for $nom<$lhs, $rhs>
         where
-            <$lhs as Evaluable>::Computed: $bound<<$rhs as Evaluable>::Computed>,
+            <$lhs as Evaluable>::Computed: $path::$bound<<$rhs as Evaluable>::Computed>,
         {
-            type Computed = <<$lhs as Evaluable>::Computed as $bound<<$rhs as Evaluable>::Computed>>::$associated_output;
+            type Computed = <<$lhs as Evaluable>::Computed as $path::$bound<<$rhs as Evaluable>::Computed>>::$associated_output;
 
-            #[inline] fn evaluate(&self) -> Self::Computed {
+            #[inline(always)] fn evaluate(&self) -> Self::Computed {
                 let $l_eval = self.lhs.evaluate();
                 let $r_eval = self.rhs.evaluate();
                 $eval
@@ -395,14 +407,24 @@ macro_rules! bin_op {
 
         impl<$lhs: Printable + Evaluable, $rhs: Printable + Evaluable> $dual<$rhs> for $lhs
         where
-            <$lhs as Evaluable>::Computed: $bound<<$rhs as Evaluable>::Computed>,
+            <$lhs as Evaluable>::Computed: $path::$bound<<$rhs as Evaluable>::Computed>,
         {
             type Output = $nom<$lhs, $rhs>;
 
-            #[inline] fn $dual_func(self, rhs: $rhs) -> $nom<$lhs, $rhs> {
+            #[inline(always)] fn $dual_func(self, rhs: $rhs) -> $nom<$lhs, $rhs> {
                 $nom::new_unchecked(self, rhs)
             }
         }
+
+        // Impl for the left side wrapper:
+        // (marked _) (op) _
+         impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> $path::$bound<Rhs> for Ls<Lhs>
+         where
+             <Lhs as Evaluable>::Computed: $path::$bound<<Rhs as Evaluable>::Computed>,
+         {
+             type Output = $nom<Lhs, Rhs>;
+             #[inline(always)] fn $bound_func(self, rhs: Rhs) -> $nom<Lhs, Rhs> { $nom::new_unchecked(self.0, rhs) }
+         }
 
         // Sugar so we can use the actual underlying op:
         // (eventually turn this into like:
@@ -416,12 +438,12 @@ macro_rules! bin_op {
         $(
             // Literals as lhs
             $($(
-                impl<Inner: Display + $lit_ty_bound, Rhs: Printable + Evaluable> $bound<Rhs> for $literal_sugar_ty<Inner>
+                impl<Inner: Display + $literal_path::$lit_ty_bound, Rhs: Printable + Evaluable> $path::$bound<Rhs> for $literal_sugar_ty<Inner>
                 where
-                    Inner: $bound<<Rhs as Evaluable>::Computed>,
+                    Inner: $path::$bound<<Rhs as Evaluable>::Computed>,
                 {
                     type $associated_output = $nom<$literal_sugar_ty<Inner>, Rhs>;
-                    #[inline] fn $bound_func(self, rhs: Rhs) -> $nom<$literal_sugar_ty<Inner>, Rhs> { $nom::new_unchecked(self, rhs) }
+                    #[inline(always)] fn $bound_func(self, rhs: Rhs) -> $nom<$literal_sugar_ty<Inner>, Rhs> { $nom::new_unchecked(self, rhs) }
                 }
             )+)?
 
@@ -433,13 +455,13 @@ macro_rules! bin_op {
 
             // Binaries as lhs
             $($(
-                impl<LLhs: Printable + Evaluable, LRhs: Printable + Evaluable, Rhs: Printable + Evaluable> $bound<Rhs> for $binary_sugar_ty<LLhs, LRhs>
+                impl<LLhs: Printable + Evaluable, LRhs: Printable + Evaluable, Rhs: Printable + Evaluable> $path::$bound<Rhs> for $binary_sugar_ty<LLhs, LRhs>
                 where
-                    <LLhs as Evaluable>::Computed: $bin_ty_bound<<LRhs as Evaluable>::Computed>,
-                    <$binary_sugar_ty<LLhs, LRhs> as Evaluable>::Computed: $bound<<Rhs as Evaluable>::Computed>,
+                    <LLhs as Evaluable>::Computed: $binary_path::$bin_ty_bound<<LRhs as Evaluable>::Computed>,
+                    <$binary_sugar_ty<LLhs, LRhs> as Evaluable>::Computed: $path::$bound<<Rhs as Evaluable>::Computed>,
                 {
                     type Output = $nom<$binary_sugar_ty<LLhs, LRhs>, Rhs>;
-                    #[inline] fn $bound_func(self, rhs: Rhs) -> $nom<$binary_sugar_ty<LLhs, LRhs>, Rhs> {
+                    #[inline(always)] fn $bound_func(self, rhs: Rhs) -> $nom<$binary_sugar_ty<LLhs, LRhs>, Rhs> {
                         $nom::new_unchecked(self, rhs)
                     }
                 }
@@ -480,6 +502,11 @@ macro_rules! bin_op {
 
 // ////////////////////////////////////////////////////////////////////////////////////////
 
+// bin_op! {
+//     SubOp: (Lhs "-" Rhs) where
+//         impl (in self) Sub::sub -> Output
+//     {
+//         dual = SubR::sub_r,
 //         eval: (l, r) => { l - r },
 //         with lhs sugar: {
 //             literals: [BasicLit: (in self) Clone],
@@ -490,7 +517,20 @@ macro_rules! bin_op {
 
 ////////////////////////////////////////////////////////////////////////////////////////
 
+bin_ops! {
+    mod ops {
+        AddOp :: + represents Add::add,
+        MulOp :: * represents Mul::mul,
+        SubOp :: - represents Sub::sub,
+        DivOp :: / represents Div::div,
+        RemOp :: % represents Rem::rem,
+
+        BitAndOp :: & represents BitAnd::bitand,
+        BitOrOp  :: | represents BitOr::bitor,
+        BitXorOp :: ^ represents BitXor::bitxor,
     }
+
+    with literals: [BasicLit: (in crate) Clone]
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
