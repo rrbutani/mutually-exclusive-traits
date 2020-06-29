@@ -219,7 +219,7 @@ impl<T: LitBound> Printable for T {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BasicLit<L: Display>(L);
-impl<L: Display> BasicLit<L> { #[inline] pub const fn new(val: L) -> Self { Self(val) } }
+impl<L: Display> BasicLit<L> { #[inline(always)] pub const fn new(val: L) -> Self { Self(val) } }
 impl<L: Display> Literal for BasicLit<L> { }
 impl<L: Display> ValidLiteralInner for BasicLit<L> { }
 impl<L: Display> Display for BasicLit<L> {
@@ -229,7 +229,7 @@ impl<L: Display> Display for BasicLit<L> {
 impl<L: Display + Clone> Evaluable for BasicLit<L> {
     type Computed = L;
 
-    #[inline]
+    #[inline(always)]
     fn evaluate(&self) -> Self::Computed { self.0.clone() }
 }
 
@@ -238,7 +238,7 @@ impl<L: Display + Clone> Evaluable for BasicLit<L> {
 pub trait Evaluable {
     type Computed;
 
-    // #[inline]
+    // #[inline(always)]
     fn evaluate(&self) -> Self::Computed;
 }
 
@@ -584,7 +584,12 @@ fn main() {
     let val = val + val;
     let val = val + val;
     let val = BasicLit::new(12) * val;
-    let val = BasicLit::new(120000000000) - val * val;
+    let val = BasicLit::new(12000000000) - val * val;
+    let val = BasicLit::new(120000000000) / val * val;
+    let val = BasicLit::new(1) | (Lt(1u128) + val);
+    let val = BasicLit::new(100) | (val + Lt(1));
+    let val = val & (val + Lt(232343));
+    let val = val & (Lt(1111111111111111));
 
     // let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
     // let val = val + Lit::<_, 6>::new_unchecked(123u128) + val + val + val + val + val + BasicLit::new(123) + Lt(89) + Lt(23);
@@ -600,15 +605,16 @@ fn main() {
     //     }
     // }
 
-    // let val = val + val;
-    // let val = val + val;
-    // let val = val + val;
-    // let val = val + val;
-    // let val = val + val;
+    let val = val + val;
+    let val = val + val;
+    let val = val + val;
+    let val = val + val;
+    let val = val + val;
+    let val = val | Lt(234) | Lt(234) * val + val / (val / Lt(234)) ^ val;
 
     // let _ = assert_printable::<Lit<u8, 8>>();
     // println!("{:#?}", val.to_repr(()));
-    println!("{:#}", val.to_repr(()));
-    println!("{:#?}", val.evaluate());
-    // println!("{}", core::any::type_name_of_val(&val));
+    // println!("{:#}", val.to_repr(()));
+    println!("{}", core::any::type_name_of_val(&val));
+    // println!("{:#?}", val.evaluatze());
 }
