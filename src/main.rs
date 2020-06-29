@@ -331,19 +331,6 @@ where
     #[inline] fn add(self, rhs: Rhs) -> AddOp<Lhs, Rhs> { AddOp::new_unchecked(self.0, rhs) }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////
-
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub struct MulOp<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable>
-// where
-//     <Lhs as Evaluable>::Computed: Mul<<Rhs as Evaluable>::Computed>,
-// {
-//     lhs: Lhs,
-//     rhs: Rhs,
-// }
-
-// impl<Lhs: Printable + Evaluable, Rhs: Printable + Evaluable> MulOp<Lhs, Rhs>
-
 macro_rules! bin_op {
     ($nom:ident: ($lhs:ident $op:literal $rhs: ident)
         where
@@ -460,6 +447,48 @@ macro_rules! bin_op {
         )?
     };
 }
+
+// ////////////////////////////////////////////////////////////////////////////////////////
+
+// bin_op! {
+//     AddOp: (Lhs "+" Rhs) where
+//         impl (in self) Add::add -> Output
+//     {
+//         dual = AddR::add_r,
+//         eval: (l, r) => { l + r },
+//         with lhs sugar: {
+//             literals: [BasicLit: (in self) Clone],
+//             binaries: [MulOp: (in self) Mul, AddOp: (in self) Add, SubOp: (in self) Sub],
+//         }
+//     }
+// }
+
+// ////////////////////////////////////////////////////////////////////////////////////////
+
+// bin_op! {
+//     MulOp: (Lhs "*" Rhs) where
+//         impl (in self) Mul::mul -> Output
+//     {
+//         dual = MulR::mul_r,
+//         eval: (l, r) => { l * r },
+//         with lhs sugar: {
+//             literals: [BasicLit: (in self) Clone],
+//             binaries: [MulOp: (in self) Mul, AddOp: (in self) Add, SubOp: (in self) Sub],
+//         }
+//     }
+// }
+
+// ////////////////////////////////////////////////////////////////////////////////////////
+
+//         eval: (l, r) => { l - r },
+//         with lhs sugar: {
+//             literals: [BasicLit: (in self) Clone],
+//             binaries: [MulOp: (in self) Mul, AddOp: (in self) Add, SubOp: (in self) Sub],
+//         }
+//     }
+// }
+
+////////////////////////////////////////////////////////////////////////////////////////
 
     }
 }
