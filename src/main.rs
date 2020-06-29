@@ -268,24 +268,6 @@ macro_rules! bin_ops {
                 use super::$literal_sugar_ty;
             )+)?
 
-            // $(
-            //     bin_op! {
-            //         $nom: (Lhs $token Rhs) where impl (in super) $tr::$tr_func -> Output
-            //         {
-            //             dual = $tr::$tr_func,
-            //             eval: (l, r) => { l $token r },
-            //             with lhs sugar: {
-            //                 // binaries: [$(
-            //                 //     $nom: (in super) $tr
-            //                 // ),+]
-            //                 // $(literals: [$(
-            //                 //     $literal_sugar_ty: (in $path) $lit_ty_bound
-            //                 // ),+])?
-            //             }
-            //         }
-            //     }
-            // )+
-
             bin_ops! {
                 __munch
                 list: [$($nom :: $token represents $tr::$tr_func,)+]
@@ -470,51 +452,6 @@ macro_rules! bin_op {
     };
 }
 
-// ////////////////////////////////////////////////////////////////////////////////////////
-
-// bin_op! {
-//     AddOp: (Lhs "+" Rhs) where
-//         impl (in self) Add::add -> Output
-//     {
-//         dual = AddR::add_r,
-//         eval: (l, r) => { l + r },
-//         with lhs sugar: {
-//             literals: [BasicLit: (in self) Clone],
-//             binaries: [MulOp: (in self) Mul, AddOp: (in self) Add, SubOp: (in self) Sub],
-//         }
-//     }
-// }
-
-// ////////////////////////////////////////////////////////////////////////////////////////
-
-// bin_op! {
-//     MulOp: (Lhs "*" Rhs) where
-//         impl (in self) Mul::mul -> Output
-//     {
-//         dual = MulR::mul_r,
-//         eval: (l, r) => { l * r },
-//         with lhs sugar: {
-//             literals: [BasicLit: (in self) Clone],
-//             binaries: [MulOp: (in self) Mul, AddOp: (in self) Add, SubOp: (in self) Sub],
-//         }
-//     }
-// }
-
-// ////////////////////////////////////////////////////////////////////////////////////////
-
-// bin_op! {
-//     SubOp: (Lhs "-" Rhs) where
-//         impl (in self) Sub::sub -> Output
-//     {
-//         dual = SubR::sub_r,
-//         eval: (l, r) => { l - r },
-//         with lhs sugar: {
-//             literals: [BasicLit: (in self) Clone],
-//             binaries: [MulOp: (in self) Mul, AddOp: (in self) Add, SubOp: (in self) Sub],
-//         }
-//     }
-// }
-
 ////////////////////////////////////////////////////////////////////////////////////////
 
 bin_ops! {
@@ -536,31 +473,27 @@ bin_ops! {
 ////////////////////////////////////////////////////////////////////////////////////////
 
 fn assert_lit<L: ValidLiteral>() -> u8 { 89 } // exclusive
-// fn assert_litl2<L: ValidLiteralL2>() -> u8 { 89 }
-// fn assert_litl1<L: ValidLiteralL1<Valid = valid::Yes>>() -> u8 { 89 }
-// fn assert_litl1<L: ValidLiteralL1>() -> u8 where L: ValidLiteralL1<Valid = valid::Yes> { 89 }
-// fn assert_litl1<L: ValidLiteralL1>() -> u8 { 89 }
-fn assert_lit_trait<L: Literal>() -> u8 { 89 }
+pub fn assert_lit_trait<L: Literal>() -> u8 { 89 }
 
-fn eval<E: Evaluable>(e: E) -> E::Computed { e.evaluate() }
+pub fn eval<E: Evaluable>(e: E) -> E::Computed { e.evaluate() }
 
 // fn assert_printable<L: Printable>() -> u8 { 89 }
 // fn assert_printable<L: Printable>() -> u8 { 89 }
 
 ////////////////////////////////////////////////////////////////////////////////////////
 
-struct Cheater;
+// struct Cheater;
 
-impl Display for Cheater {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
-    }
-}
+// impl Display for Cheater {
+//     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         todo!()
+//     }
+// }
 
-impl Literal for Cheater { }
-impl UnaryOp for Cheater { fn op(&self) -> &dyn std::fmt::Display { todo!() }
-fn arg(&self) -> &dyn Printable { todo!() }
-}
+// impl Literal for Cheater { }
+// impl UnaryOp for Cheater { fn op(&self) -> &dyn std::fmt::Display { todo!() }
+// fn arg(&self) -> &dyn Printable { todo!() }
+// }
 // impl ValidLiteralInner for Cheater { }
 
 ////////////////////////////////////////////////////////////////////////////////////////
